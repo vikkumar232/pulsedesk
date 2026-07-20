@@ -7,10 +7,7 @@ const allowedOrigin = process.env.FRONTEND_ORIGIN || '*';
 
 app.use(cors({ origin: allowedOrigin }));
 app.use(express.json({ limit: '32kb' }));
-
-app.get('/', (_request, response) => {
-  response.redirect('https://vikkumar232.github.io/pulsedesk/');
-});
+app.use(express.static(process.cwd()));
 
 app.get('/health', (_request, response) => {
   response.json({ ok: true, service: 'pulsedesk-api' });
