@@ -2,7 +2,6 @@ services:
   - type: web
     name: pulsedesk-api
     runtime: node
-    rootDir: server
     buildCommand: npm install
     startCommand: node server/index.js
     healthCheckPath: /health
