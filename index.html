@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PulseDesk · AI Dispatch Console</title><link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">✦</div><div><strong>PulseDesk</strong><small>AI dispatch console</small></div></div>
+      <div class="workspace-label">WORKSPACE</div>
+      <nav><button class="nav-item active" data-view="dashboard"><span>▦</span>Command center</button><button class="nav-item" data-view="history"><span>◷</span>Incident history</button></nav>
+      <div class="sidebar-bottom"><div class="secure-card"><span class="status-dot"></span><div><strong>System operational</strong><small>Local AI · encrypted workspace</small></div></div><div class="operator"><div class="avatar">ED</div><div><strong>Emergency dispatcher</strong><small>Dispatcher · Online</small></div><span>•••</span></div></div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div><div class="breadcrumb">OPERATIONS <span>/</span> <b id="pageTitle">COMMAND CENTER</b></div><h1 id="viewHeading">Good evening, dispatcher <span>✦</span></h1></div><div class="top-actions"><div class="live-pill"><i></i> Live console</div><button class="icon-btn" id="newIncident" title="New incident">＋ <span>New incident</span></button><button class="avatar mini">ED</button></div></header>
+      <section id="dashboardView" class="view">
+        <div class="content-grid">
+          <section class="card incident-card"><div class="card-heading"><div><span class="section-kicker">ACTIVE WORKSPACE</span><h2>New incident</h2></div><span class="badge" id="statusBadge"><i></i> AI active</span></div><div class="progress"><span></span></div>
+            <div class="form-section"><label>Dispatch services <small>Select all that apply</small></label><div class="service-grid"><button class="service-btn" data-service="Fire Rescue"><span>♨</span>Fire Rescue</button><button class="service-btn" data-service="Police"><span>✦</span>Police</button><button class="service-btn" data-service="Ambulance"><span>✚</span>Ambulance</button></div><div id="selectedServices" class="chips"></div></div>
+            <div class="split-fields"><div class="form-section"><label for="operatorDetails">Operator notes <small>Private workspace</small></label><textarea id="operatorDetails" placeholder="Describe what you know so far..."></textarea></div><div class="form-section"><label for="callerTranscript">Live caller transcript <small>AI listens here</small></label><textarea id="callerTranscript" placeholder="Incoming caller transcript will appear here..."></textarea></div></div>
+            <div class="callout"><span>✦</span><div><strong>Operator-first AI</strong><p>AI suggestions are for trained operator review only. Keep all caller communication through the operator.</p></div></div>
+            <div class="card-actions"><button id="simulateCall" class="secondary-btn" type="button">▶ Load random sample call</button><button id="clearTranscript" class="ghost-btn" type="button">Clear fields</button><button id="generateSummary" class="primary-btn" type="button">Generate AI summary <span>→</span></button></div>
+          </section>
+          <aside class="right-column"><section class="card suggestions-card"><div class="card-heading"><h2>Suggested prompts</h2><span class="badge subtle">Live analysis</span></div><ul id="suggestionsList" class="suggestion-list"></ul></section><section class="card assistant-card"><div class="card-heading"><div class="assistant-title"><div class="sparkle">✦</div><div><span class="section-kicker">PULSE AI</span><h2>Dispatch assistant</h2></div></div><button id="aiToggle" class="toggle-btn">ON</button></div><div id="chatMessages" class="chat-messages"><div class="chat-bubble ai"><span class="bubble-avatar">✦</span><div><strong>Pulse AI</strong><p>I’m ready to assist. Add a transcript or ask me anything about this incident.</p></div></div></div><div class="quick-prompts"><button data-prompt="What should I ask next?">What should I ask next?</button><button data-prompt="Assess the incident">Assess incident</button></div><div class="chat-input"><input id="chatInput" placeholder="Ask Pulse AI..." /><button id="sendChat">↑</button></div></section></aside>
+        </div>
+        <section class="card summary-panel"><div class="card-heading"><div><span class="section-kicker">REPORTING</span><h2>Verified call summary</h2></div><span id="summaryStatus" class="badge subtle">Ready for review</span></div><div id="summaryOutput" class="summary-card"><div class="empty-summary"><div>✦</div><p>Generate a summary when you have enough information. Pulse AI will highlight what’s known and what still needs verification.</p></div></div></section>
+      </section>
+      <section id="historyView" class="view hidden"><div class="page-card card"><div class="card-heading"><div><span class="section-kicker">ARCHIVE</span><h2>Incident history</h2></div><button class="ghost-btn" id="clearHistory">Clear history</button></div><div id="historyList" class="history-list"></div></div></section>
+      <footer><span>PulseDesk v1.0</span><span>Built for safer, faster decisions · <b>AI suggestions require operator verification</b></span></footer>
+    </main>
+  </div><script src="config.js"></script><script src="app.js"></script>
+</body></html>

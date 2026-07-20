@@ -1,0 +1,12 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor settings
+.vscode/
+
+# Local server logs
+*.log
+
+# Local secrets
+config.js
