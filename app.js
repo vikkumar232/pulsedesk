@@ -23,7 +23,7 @@ async function geminiReply(q){
         const events=buffer.split('\n\n');buffer=events.pop()||'';
         for(const event of events){
           const dataLine=event.split('\n').find(line=>line.startsWith('data: '));if(!dataLine)continue;
-          try{const payload=JSON.parse(dataLine.slice(6));if(event.includes('event: agent')){if(pending)pending.querySelector('p').textContent=(payload.agent||'Agent')+' agent complete; reviewing...';}if(event.includes('event: final')&&payload.answer){finalAnswer=payload.answer;if(pending)pending.querySelector('p').textContent=finalAnswer;}}catch(error){/* ignore malformed stream fragments */}
+          try{const payload=JSON.parse(dataLine.slice(6));if(event.includes('event: agent')){if(pending)pending.querySelector('p').textContent=(payload.agent||'Agent')+' agent complete; reviewing...';}if(payload.answer){finalAnswer=payload.answer;if(pending)pending.querySelector('p').textContent=finalAnswer;}}catch(error){/* ignore malformed stream fragments */}
         }
       }
       return finalAnswer||assistantReply(q);
