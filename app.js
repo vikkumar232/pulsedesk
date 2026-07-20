@@ -14,21 +14,22 @@ async function geminiReply(q){
   const apiBase=window.PULSEDESK_API_BASE;
   if(apiBase){
     try{
-      const remote=await fetch(apiBase+'/api/gemini',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,context:context})});
-      const result=await remote.json();
-      if(!remote.ok)throw new Error(result.error||'Render AI request failed');
-      return result.answer||assistantReply(q);
+      const remote=await fetch(apiBase+'/api/gemini/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,context:context})});
+      if(!remote.ok)throw new Error('Render AI request failed');
+      const reader=remote.body.getReader(),decoder=new TextDecoder();let buffer='',finalAnswer='';
+      const pending=window.__pulsePending;
+      while(true){
+        const chunk=await reader.read();if(chunk.done)break;buffer+=decoder.decode(chunk.value,{stream:true});
+        const events=buffer.split('\n\n');buffer=events.pop()||'';
+        for(const event of events){
+          const dataLine=event.split('\n').find(line=>line.startsWith('data: '));if(!dataLine)continue;
+          try{const payload=JSON.parse(dataLine.slice(6));if(event.includes('event: agent')){if(pending)pending.querySelector('p').textContent=(payload.agent||'Agent')+' agent complete; reviewing...';}if(event.includes('event: final')&&payload.answer){finalAnswer=payload.answer;if(pending)pending.querySelector('p').textContent=finalAnswer;}}catch(error){/* ignore malformed stream fragments */}
+        }
+      }
+      return finalAnswer||assistantReply(q);
     }catch(error){return assistantReply(q)+'<br><small>Remote AI was unavailable, so I used the local assistant.</small>';}
   }
-  const key=window.PULSEDESK_CONFIG&&window.PULSEDESK_CONFIG.GEMINI_API_KEY;
-  if(!key||key.includes('PASTE_YOUR'))return assistantReply(q);
-  const prompt='You are Pulse AI, an assistant for a trained emergency dispatcher. Use the incident context below to answer the dispatcher. Give concise, calm, practical suggestions. Never claim certainty, never contact emergency services, and always tell the operator to verify critical details. Do not replace trained professional judgment.\n\n'+context+'\n\nDispatcher question: '+q;
-  try{
-    const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:.2,maxOutputTokens:300}})});
-    if(!response.ok)throw new Error('Gemini request failed');
-    const data=await response.json();
-    return data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts&&data.candidates[0].content.parts[0].text||assistantReply(q);
-  }catch(error){return assistantReply(q)+'<br><small>Gemini was unavailable, so I used the local assistant.</small>';}
+  return assistantReply(q);
 }
 function renderHistory(){const list=$('#historyList');list.innerHTML=history.length?history.map((x,i)=>`<div class="history-row"><div><strong>${x.incident.slice(0,80)}</strong><small>${x.time} · ${x.services} · Severity ${x.severity}/10</small></div><span class="badge subtle">Archived</span></div>`).join(''):'<div class="empty-summary"><div>◷</div><p>No saved incidents yet. Generate a summary to add the first report.</p></div>';}
 $$('.service-btn').forEach(btn=>btn.addEventListener('click',()=>{const service=btn.dataset.service;if(selected.includes(service)){selected=selected.filter(x=>x!==service);btn.classList.remove('active')}else{selected.push(service);btn.classList.add('active')}renderServices();}));
@@ -37,5 +38,5 @@ $('#simulateCall').addEventListener('click',()=>{const sampleKeys=Object.keys(sa
 $('#clearTranscript').addEventListener('click',()=>{details.value='';transcript.value='';selected=[];$$('.service-btn').forEach(x=>x.classList.remove('active'));renderServices();analyze();summaryOutput.innerHTML='<div class="empty-summary"><div>✦</div><p>Generate a summary when you have enough information. Pulse AI will highlight what’s known and what still needs verification.</p></div>';summaryStatus.textContent='Ready for review';});
 $('#generateSummary').addEventListener('click',()=>{if(!aiEnabled)return;summaryStatus.textContent='Verifying report…';const s=buildSummary();setTimeout(()=>{summaryOutput.innerHTML=`<div class="summary-box"><p><strong>Location:</strong> ${s.location}</p><p><strong>Time received:</strong> ${s.time}</p><p><strong>Dispatch:</strong> ${s.services}</p><p><strong>Severity:</strong> ${s.severity}/10 priority</p><p><strong>What happened:</strong> ${s.incident}</p><p class="verification"><strong>Verification:</strong> AI review complete. Operator must confirm all critical fields before dispatch.</p></div>`;summaryStatus.textContent='Verified summary ready';history.unshift(s);history=history.slice(0,10);localStorage.setItem('pulsedesk-history',JSON.stringify(history));renderHistory();addChat('Summary drafted and saved to incident history. Please verify every field before dispatch.');},500);});
 function toggleAI(){aiEnabled=!aiEnabled;$('#aiToggle').textContent=aiEnabled?'ON':'OFF';$('#aiToggle').style.background=aiEnabled?'#e8faf2':'#f2f2f5';$('#aiToggle').style.color=aiEnabled?'#28bf82':'#999';$('#statusBadge').innerHTML=aiEnabled?'<i></i> AI active':'AI paused';$('#generateSummary').disabled=!aiEnabled;}
-$('#aiToggle').addEventListener('click',toggleAI);async function sendChat(){const input=$('#chatInput'),q=input.value.trim();if(!q)return;addChat(q,'user');input.value='';addChat('Thinking…');const bubbles=chat.querySelectorAll('.chat-bubble');const pending=bubbles[bubbles.length-1];const response=await geminiReply(q);pending.remove();addChat(response)}$('#sendChat').addEventListener('click',sendChat);$('#chatInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat()});$$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{ $('#chatInput').value=b.dataset.prompt;sendChat();}));
+$('#aiToggle').addEventListener('click',toggleAI);async function sendChat(){const input=$('#chatInput'),q=input.value.trim();if(!q)return;addChat(q,'user');input.value='';addChat('Thinking…');const bubbles=chat.querySelectorAll('.chat-bubble');const pending=bubbles[bubbles.length-1];window.__pulsePending=pending;const response=await geminiReply(q);window.__pulsePending=null;pending.remove();addChat(response)}$('#sendChat').addEventListener('click',sendChat);$('#chatInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat()});$$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{ $('#chatInput').value=b.dataset.prompt;sendChat();}));
 function showView(view){const dash=$('#dashboardView'),hist=$('#historyView');dash.classList.toggle('hidden',view!=='dashboard');hist.classList.toggle('hidden',view!=='history');$$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===view));$('#pageTitle').textContent=view==='history'?'INCIDENT HISTORY':'COMMAND CENTER';$('#viewHeading').innerHTML=view==='history'?'Incident history <span>◷</span>':'Good evening, dispatcher <span>✦</span>';if(view==='history')renderHistory();}$$('.nav-item').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));$('#newIncident').addEventListener('click',()=>{showView('dashboard');$('#clearTranscript').click();details.focus()});$('#clearHistory').addEventListener('click',()=>{history=[];localStorage.removeItem('pulsedesk-history');renderHistory()});renderServices();analyze();renderHistory();
