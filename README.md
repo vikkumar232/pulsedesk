@@ -16,6 +16,18 @@ The assistant will use Gemini for chat responses when the key is configured. If 
 
 **Never upload `config.js` or a real API key to GitHub.** The repository includes `config.example.js` as a safe template, and `config.js` is excluded by `.gitignore`.
 
+## Dynamic Supabase backend
+
+The `supabase/` folder contains the shared incidents database schema and secure Gemini Edge Function. To connect it:
+
+1. Create a Supabase project.
+2. Run `supabase/schema.sql` in the Supabase SQL Editor.
+3. Copy `supabase-config.example.js` to `supabase-config.js` and add the project URL and anon key.
+4. Set `GEMINI_API_KEY` as a Supabase Edge Function secret.
+5. Deploy the `supabase/functions/gemini` function.
+
+The service-role key and Gemini key must remain server-side and must never be placed in browser files or GitHub.
+
 For a local web address, run a simple static server from this folder:
 
 ```powershell

@@ -10,3 +10,4 @@ Thumbs.db
 
 # Local secrets
 config.js
+supabase-config.js
