@@ -30,6 +30,12 @@ async function callGemini(prompt, apiKey, temperature = 0.2, maxOutputTokens = 3
   return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No answer was returned.';
 }
 
+function oneSentence(text) {
+  const cleaned = String(text).replace(/^[\s>*-]+/, '').replace(/\s+/g, ' ').trim();
+  const match = cleaned.match(/^.*?[.!?](?=\s|$)/);
+  return (match ? match[0] : cleaned).trim() || 'Please verify the critical incident details with the caller.';
+}
+
 app.post('/api/gemini', async (request, response) => {
   const { question, context } = request.body || {};
   if (!question || typeof question !== 'string') {
@@ -42,8 +48,8 @@ app.post('/api/gemini', async (request, response) => {
   try {
     const analystPrompt = `You are the Dispatch Analyst sub-agent. Draft a concise answer for a trained emergency dispatcher using the incident context below. Identify missing information and practical next questions. Do not make autonomous dispatch decisions, contact anyone, or claim certainty.\n\nIncident context:\n${context || 'No incident context provided.'}\n\nDispatcher question:\n${question}`;
     const draft = await callGemini(analystPrompt, apiKey, 0.2, 350);
-    const reviewerPrompt = `You are the Safety Reviewer sub-agent. Review the analyst draft below before it is shown to a trained emergency dispatcher. Return only the improved final response. Keep it concise, calm, and easy to scan. Remove unsupported claims, unsafe instructions, and autonomous decisions. Preserve useful questions and remind the operator to verify critical details.\n\nIncident context:\n${context || 'No incident context provided.'}\n\nDispatcher question:\n${question}\n\nAnalyst draft:\n${draft}`;
-    const answer = await callGemini(reviewerPrompt, apiKey, 0.1, 350);
+    const reviewerPrompt = `You are the Safety Reviewer sub-agent. Review the analyst draft below before it is shown to a trained emergency dispatcher. Return exactly ONE sentence and nothing else. Keep it concise, calm, and practical. Remove unsupported claims, unsafe instructions, and autonomous decisions. Preserve the most useful next question and remind the operator to verify critical details.\n\nIncident context:\n${context || 'No incident context provided.'}\n\nDispatcher question:\n${question}\n\nAnalyst draft:\n${draft}`;
+    const answer = oneSentence(await callGemini(reviewerPrompt, apiKey, 0.1, 150));
     return response.json({ answer, reviewed: true });
   } catch (error) {
     return response.status(500).json({ error: error instanceof Error ? error.message : 'Unexpected server error.' });
