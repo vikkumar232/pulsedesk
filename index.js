@@ -68,7 +68,17 @@ function agentPrompts(context, protocol) {
 }
 
 function writeEvent(response, event, payload) { response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); }
-function oneSentence(text) { const cleaned = String(text).replace(/^[\s>*-]+/, '').replace(/\s+/g, ' ').trim(); const match = cleaned.match(/^.*?[.!?](?=\s|$)/); return (match ? match[0] : cleaned).trim() || 'Please verify the critical incident details with the caller.'; }
+function oneSentence(text) {
+  const cleaned = String(text).replace(/^[\s>*-]+/, '').replace(/\s+/g, ' ').trim();
+  const match = cleaned.match(/^.*?[.!?](?=\s|$)/);
+  const sentence = (match ? match[0] : cleaned).trim();
+  const lastWord = sentence.toLowerCase().replace(/[^a-z]+$/, '').split(' ').pop();
+  const unfinishedWords = new Set(['a', 'an', 'and', 'because', 'for', 'from', 'if', 'in', 'is', 'of', 'or', 'the', 'to', 'with']);
+  if (sentence.split(/\s+/).length < 7 || unfinishedWords.has(lastWord)) {
+    return 'Verify the exact location, immediate safety risks, and applicable approved protocol before giving procedural guidance.';
+  }
+  return sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?') ? sentence : `${sentence}.`;
+}
 
 async function orchestrate(question, context, apiKey, onEvent) {
   const protocol = await protocolStore(context);
@@ -83,7 +93,7 @@ async function orchestrate(question, context, apiKey, onEvent) {
   });
   const [incident, safety, questions] = await Promise.all(independent);
   const synthesis = `You are the final Dispatch Reviewer. Return exactly ONE sentence and nothing else. Ground every procedural recommendation ONLY in approvedSteps from the protocol store; if protocol status is blocked or approvedSteps is empty, do not invent steps and instead say the operator must verify the applicable protocol. Use the facts and safe questions from the other agents. Be concise and operator-first.\n\nQuestion: ${question}\nIncident: ${JSON.stringify(incident)}\nSafety: ${JSON.stringify(safety)}\nQuestions: ${JSON.stringify(questions)}\nProtocol: ${JSON.stringify(protocol)}`;
-  const answer = oneSentence(await callGemini(synthesis, apiKey, { temperature: 0.05, maxOutputTokens: 120 }));
+  const answer = oneSentence(await callGemini(synthesis, apiKey, { temperature: 0.05, maxOutputTokens: 220 }));
   onEvent('final', { agent: 'reviewer', status: 'ok', answer, protocolGrounded: protocol.status === 'ok' && protocol.approvedSteps.length > 0 });
   return answer;
 }
