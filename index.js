@@ -13,6 +13,23 @@ app.get('/health', (_request, response) => {
   response.json({ ok: true, service: 'pulsedesk-api' });
 });
 
+async function callGemini(prompt, apiKey, temperature = 0.2, maxOutputTokens = 350) {
+  const geminiResponse = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature, maxOutputTokens },
+      }),
+    },
+  );
+  const data = await geminiResponse.json();
+  if (!geminiResponse.ok) throw new Error(data?.error?.message || 'Gemini request failed.');
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No answer was returned.';
+}
+
 app.post('/api/gemini', async (request, response) => {
   const { question, context } = request.body || {};
   if (!question || typeof question !== 'string') {
@@ -22,24 +39,12 @@ app.post('/api/gemini', async (request, response) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return response.status(503).json({ error: 'Gemini is not configured on the server.' });
 
-  const prompt = `You are Pulse AI, an assistant for a trained emergency dispatcher. Use the incident context below to answer the dispatcher. Give concise, calm, practical suggestions. Never claim certainty, never contact emergency services, and always tell the operator to verify critical details. Do not replace trained professional judgment.\n\nIncident context:\n${context || 'No incident context provided.'}\n\nDispatcher question:\n${question}`;
-
   try {
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 300 },
-        }),
-      },
-    );
-
-    const data = await geminiResponse.json();
-    if (!geminiResponse.ok) return response.status(geminiResponse.status).json({ error: data?.error?.message || 'Gemini request failed.' });
-    return response.json({ answer: data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No answer was returned.' });
+    const analystPrompt = `You are the Dispatch Analyst sub-agent. Draft a concise answer for a trained emergency dispatcher using the incident context below. Identify missing information and practical next questions. Do not make autonomous dispatch decisions, contact anyone, or claim certainty.\n\nIncident context:\n${context || 'No incident context provided.'}\n\nDispatcher question:\n${question}`;
+    const draft = await callGemini(analystPrompt, apiKey, 0.2, 350);
+    const reviewerPrompt = `You are the Safety Reviewer sub-agent. Review the analyst draft below before it is shown to a trained emergency dispatcher. Return only the improved final response. Keep it concise, calm, and easy to scan. Remove unsupported claims, unsafe instructions, and autonomous decisions. Preserve useful questions and remind the operator to verify critical details.\n\nIncident context:\n${context || 'No incident context provided.'}\n\nDispatcher question:\n${question}\n\nAnalyst draft:\n${draft}`;
+    const answer = await callGemini(reviewerPrompt, apiKey, 0.1, 350);
+    return response.json({ answer, reviewed: true });
   } catch (error) {
     return response.status(500).json({ error: error instanceof Error ? error.message : 'Unexpected server error.' });
   }
