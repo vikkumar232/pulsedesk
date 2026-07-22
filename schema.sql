@@ -13,6 +13,11 @@ create table if not exists public.incidents (
 
 alter table public.incidents enable row level security;
 
+drop policy if exists "Users can view their own incidents" on public.incidents;
+drop policy if exists "Users can create their own incidents" on public.incidents;
+drop policy if exists "Users can update their own incidents" on public.incidents;
+drop policy if exists "Users can delete their own incidents" on public.incidents;
+
 create policy "Users can view their own incidents"
   on public.incidents for select
   using (auth.uid() = created_by);
@@ -45,6 +50,8 @@ create table if not exists public.protocols (
 );
 
 alter table public.protocols enable row level security;
+
+drop policy if exists "Authenticated users can read active protocols" on public.protocols;
 
 create policy "Authenticated users can read active protocols"
   on public.protocols for select
