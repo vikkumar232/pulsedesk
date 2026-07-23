@@ -5,6 +5,7 @@ const app = express();
 const port = process.env.PORT || 10000;
 const allowedOrigin = process.env.FRONTEND_ORIGIN || '*';
 const MODEL = 'gemini-3.5-flash';
+const PROTOCOL_FALLBACK = 'Verify the exact location, immediate safety risks, and applicable approved protocol before giving procedural guidance.';
 
 app.use(cors({ origin: allowedOrigin }));
 app.use(express.json({ limit: '32kb' }));
@@ -75,9 +76,18 @@ function oneSentence(text) {
   const lastWord = sentence.toLowerCase().replace(/[^a-z]+$/, '').split(' ').pop();
   const unfinishedWords = new Set(['a', 'an', 'and', 'because', 'for', 'from', 'if', 'in', 'is', 'of', 'or', 'the', 'to', 'with']);
   if (sentence.split(/\s+/).length < 3 || unfinishedWords.has(lastWord)) {
-    return 'Verify the exact location, immediate safety risks, and applicable approved protocol before giving procedural guidance.';
+    return PROTOCOL_FALLBACK;
   }
   return sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?') ? sentence : `${sentence}.`;
+}
+
+function questionFallback(question) {
+  const q = question.toLowerCase();
+  if (/purpose|what is pulsedesk|how does pulsedesk|how does this work/.test(q)) return 'PulseDesk helps dispatchers organize call details, identify missing information, and review operator-controlled guidance.';
+  if (/next|ask|question/.test(q)) return 'Ask for the exact location, caller callback number, people involved, and immediate safety risks.';
+  if (/summary|report/.test(q)) return 'PulseDesk can organize the confirmed incident facts into a concise summary for operator review.';
+  if (/risk|assess|severity/.test(q)) return 'Confirm injuries, hazards, location, and the number of people involved before assessing urgency.';
+  return PROTOCOL_FALLBACK;
 }
 
 async function orchestrate(question, context, apiKey, onEvent) {
@@ -93,7 +103,8 @@ async function orchestrate(question, context, apiKey, onEvent) {
   });
   const [incident, safety, questions] = await Promise.all(independent);
   const synthesis = `You are the final Dispatch Reviewer. Return exactly ONE sentence and nothing else. Ground every procedural recommendation ONLY in approvedSteps from the protocol store. If the protocol store is blocked or empty, do not invent procedural steps; answer non-procedural questions using the incident facts and say protocol verification is required only when procedural guidance is requested. Use the facts and safe questions from the other agents. Be concise and operator-first.\n\nQuestion: ${question}\nIncident: ${JSON.stringify(incident)}\nSafety: ${JSON.stringify(safety)}\nQuestions: ${JSON.stringify(questions)}\nProtocol: ${JSON.stringify(protocol)}`;
-  const answer = oneSentence(await callGemini(synthesis, apiKey, { temperature: 0.05, maxOutputTokens: 220 }));
+  const reviewed = oneSentence(await callGemini(synthesis, apiKey, { temperature: 0.05, maxOutputTokens: 220 }));
+  const answer = reviewed === PROTOCOL_FALLBACK ? questionFallback(question) : reviewed;
   onEvent('final', { agent: 'reviewer', status: 'ok', answer, protocolGrounded: protocol.status === 'ok' && protocol.approvedSteps.length > 0 });
   return answer;
 }
