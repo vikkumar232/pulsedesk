@@ -6,10 +6,50 @@ const port = process.env.PORT || 10000;
 const allowedOrigin = process.env.FRONTEND_ORIGIN || '*';
 const MODEL = 'gemini-3.5-flash';
 const PROTOCOL_FALLBACK = 'Verify the exact location, immediate safety risks, and applicable approved protocol before giving procedural guidance.';
+const MAX_QUESTION_LENGTH = 500;
+const MAX_CONTEXT_LENGTH = 6000;
+const REQUEST_WINDOW_MS = 60_000;
+const REQUEST_LIMIT = 30;
+const requestCounts = new Map();
 
-app.use(cors({ origin: allowedOrigin }));
-app.use(express.json({ limit: '32kb' }));
+const allowedOrigins = allowedOrigin.split(',').map(origin => origin.trim()).filter(Boolean);
+app.use(cors({ origin: (origin, callback) => {
+  if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return callback(null, true);
+  return callback(new Error('Origin is not allowed.'));
+} }));
+app.use(express.json({ limit: '16kb' }));
 app.use(express.static(process.cwd()));
+
+function clientKey(request) { return request.ip || request.headers['x-forwarded-for'] || 'unknown'; }
+function rateLimit(request, response, next) {
+  const now = Date.now();
+  const key = clientKey(request);
+  const entry = requestCounts.get(key);
+  if (!entry || now - entry.startedAt >= REQUEST_WINDOW_MS) {
+    requestCounts.set(key, { startedAt: now, count: 1 });
+    return next();
+  }
+  entry.count += 1;
+  if (entry.count > REQUEST_LIMIT) return response.status(429).json({ error: 'Too many AI requests; try again in a minute.' });
+  return next();
+}
+function validateInput(request, response) {
+  const { question, context } = request.body || {};
+  if (typeof question !== 'string' || question.trim().length < 2 || question.length > MAX_QUESTION_LENGTH) {
+    response.status(400).json({ error: `Question must be between 2 and ${MAX_QUESTION_LENGTH} characters.` });
+    return null;
+  }
+  if (context !== undefined && (typeof context !== 'string' || context.length > MAX_CONTEXT_LENGTH)) {
+    response.status(400).json({ error: `Context must be at most ${MAX_CONTEXT_LENGTH} characters.` });
+    return null;
+  }
+  return { question: question.trim(), context: (context || '').trim() || 'No incident context provided.' };
+}
+async function fetchWithTimeout(url, options = {}, timeoutMs = 20_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...options, signal: controller.signal }); } finally { clearTimeout(timeout); }
+}
 
 const AGENT_NAMES = ['protocol', 'incident', 'safety', 'questions'];
 const asString = (value, fallback = '') => typeof value === 'string' ? value : fallback;
@@ -37,7 +77,7 @@ function parseTyped(text, schema) {
 }
 
 async function callGemini(prompt, apiKey, options = {}) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+  const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: options.temperature ?? 0.1, maxOutputTokens: options.maxOutputTokens ?? 350 } }),
   });
@@ -50,8 +90,9 @@ async function protocolStore(context) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return { ...agentSchemas.protocol, status: 'blocked', source: 'Protocol store is not configured.' };
-  const terms = encodeURIComponent((context || 'emergency dispatch').slice(0, 120));
-  const response = await fetch(`${url}/rest/v1/protocols?select=id,name,topic,approved_steps,source_url&or=(topic.ilike.*${terms}*,name.ilike.*${terms}*)&limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+  const safeTerms = (context || 'emergency dispatch').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(word => word.length >= 4).slice(0, 3);
+  const search = safeTerms[0] || 'emergency';
+  const response = await fetchWithTimeout(`${url}/rest/v1/protocols?select=id,name,topic,approved_steps,source_url&topic=ilike.*${encodeURIComponent(search)}*&active=eq.true&limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
   if (!response.ok) return { ...agentSchemas.protocol, status: 'blocked', source: 'Protocol store query failed.' };
   const rows = await response.json();
   if (!rows.length) return { ...agentSchemas.protocol, status: 'blocked', source: 'No matching approved protocol found.' };
@@ -68,7 +109,7 @@ function agentPrompts(context, protocol) {
   };
 }
 
-function writeEvent(response, event, payload) { response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); }
+function writeEvent(response, event, payload) { if (!response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); }
 function oneSentence(text) {
   const cleaned = String(text).replace(/^[\s>*-]+/, '').replace(/\s+/g, ' ').trim();
   const match = cleaned.match(/^.*?[.!?](?=\s|$)/);
@@ -135,8 +176,10 @@ async function orchestrate(question, context, apiKey, onEvent) {
 
 app.get('/health', (_request, response) => response.json({ ok: true, service: 'pulsedesk-api', agents: AGENT_NAMES }));
 
-app.post('/api/gemini/stream', async (request, response) => {
-  const { question, context } = request.body || {};
+app.post('/api/gemini/stream', rateLimit, async (request, response) => {
+  const input = validateInput(request, response);
+  if (!input) return;
+  const { question, context } = input;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!question || typeof question !== 'string') return response.status(400).json({ error: 'A question is required.' });
   if (!apiKey) return response.status(503).json({ error: 'Gemini is not configured on the server.' });
@@ -145,8 +188,10 @@ app.post('/api/gemini/stream', async (request, response) => {
   response.end();
 });
 
-app.post('/api/gemini', async (request, response) => {
-  const { question, context } = request.body || {};
+app.post('/api/gemini', rateLimit, async (request, response) => {
+  const input = validateInput(request, response);
+  if (!input) return;
+  const { question, context } = input;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!question || typeof question !== 'string') return response.status(400).json({ error: 'A question is required.' });
   if (!apiKey) return response.status(503).json({ error: 'Gemini is not configured on the server.' });
