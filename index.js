@@ -74,7 +74,7 @@ function oneSentence(text) {
   const sentence = (match ? match[0] : cleaned).trim();
   const lastWord = sentence.toLowerCase().replace(/[^a-z]+$/, '').split(' ').pop();
   const unfinishedWords = new Set(['a', 'an', 'and', 'because', 'for', 'from', 'if', 'in', 'is', 'of', 'or', 'the', 'to', 'with']);
-  if (sentence.split(/\s+/).length < 7 || unfinishedWords.has(lastWord)) {
+  if (sentence.split(/\s+/).length < 3 || unfinishedWords.has(lastWord)) {
     return 'Verify the exact location, immediate safety risks, and applicable approved protocol before giving procedural guidance.';
   }
   return sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?') ? sentence : `${sentence}.`;
@@ -92,7 +92,7 @@ async function orchestrate(question, context, apiKey, onEvent) {
     } catch { const result = { ...agentSchemas[name], status: 'error' }; onEvent('agent', result); return result; }
   });
   const [incident, safety, questions] = await Promise.all(independent);
-  const synthesis = `You are the final Dispatch Reviewer. Return exactly ONE sentence and nothing else. Ground every procedural recommendation ONLY in approvedSteps from the protocol store; if protocol status is blocked or approvedSteps is empty, do not invent steps and instead say the operator must verify the applicable protocol. Use the facts and safe questions from the other agents. Be concise and operator-first.\n\nQuestion: ${question}\nIncident: ${JSON.stringify(incident)}\nSafety: ${JSON.stringify(safety)}\nQuestions: ${JSON.stringify(questions)}\nProtocol: ${JSON.stringify(protocol)}`;
+  const synthesis = `You are the final Dispatch Reviewer. Return exactly ONE sentence and nothing else. Ground every procedural recommendation ONLY in approvedSteps from the protocol store. If the protocol store is blocked or empty, do not invent procedural steps; answer non-procedural questions using the incident facts and say protocol verification is required only when procedural guidance is requested. Use the facts and safe questions from the other agents. Be concise and operator-first.\n\nQuestion: ${question}\nIncident: ${JSON.stringify(incident)}\nSafety: ${JSON.stringify(safety)}\nQuestions: ${JSON.stringify(questions)}\nProtocol: ${JSON.stringify(protocol)}`;
   const answer = oneSentence(await callGemini(synthesis, apiKey, { temperature: 0.05, maxOutputTokens: 220 }));
   onEvent('final', { agent: 'reviewer', status: 'ok', answer, protocolGrounded: protocol.status === 'ok' && protocol.approvedSteps.length > 0 });
   return answer;
