@@ -90,6 +90,15 @@ function questionFallback(question) {
   return PROTOCOL_FALLBACK;
 }
 
+function groundedFallback(question, incident, safety, questions) {
+  const q = question.toLowerCase();
+  if (/purpose|what is pulsedesk|how does pulsedesk|how does this work/.test(q)) return 'PulseDesk helps dispatchers organize call details, identify missing information, and review operator-controlled guidance.';
+  if (/next|ask|question/.test(q)) return oneSentence(questions.questions?.[0] || safety.safeQuestions?.[0] || 'Ask for the exact location, caller callback number, people involved, and immediate safety risks.');
+  if (/risk|assess|severity/.test(q)) return oneSentence(safety.immediateRisks?.[0] || 'Confirm injuries, hazards, location, and the number of people involved before assessing urgency.');
+  if (/summary|report/.test(q)) return 'PulseDesk can organize the confirmed incident facts into a concise summary for operator review.';
+  return questionFallback(question);
+}
+
 async function orchestrate(question, context, apiKey, onEvent) {
   const protocol = await protocolStore(context);
   onEvent('agent', protocol);
@@ -102,6 +111,11 @@ async function orchestrate(question, context, apiKey, onEvent) {
     } catch { const result = { ...agentSchemas[name], status: 'error' }; onEvent('agent', result); return result; }
   });
   const [incident, safety, questions] = await Promise.all(independent);
+  if (protocol.status !== 'ok' || !protocol.approvedSteps.length) {
+    const answer = groundedFallback(question, incident, safety, questions);
+    onEvent('final', { agent: 'reviewer', status: 'ok', answer, protocolGrounded: false });
+    return answer;
+  }
   const synthesis = `You are the final Dispatch Reviewer. Return exactly ONE sentence and nothing else. Ground every procedural recommendation ONLY in approvedSteps from the protocol store. If the protocol store is blocked or empty, do not invent procedural steps; answer non-procedural questions using the incident facts and say protocol verification is required only when procedural guidance is requested. Use the facts and safe questions from the other agents. Be concise and operator-first.\n\nQuestion: ${question}\nIncident: ${JSON.stringify(incident)}\nSafety: ${JSON.stringify(safety)}\nQuestions: ${JSON.stringify(questions)}\nProtocol: ${JSON.stringify(protocol)}`;
   const reviewed = oneSentence(await callGemini(synthesis, apiKey, { temperature: 0.05, maxOutputTokens: 220 }));
   const answer = reviewed === PROTOCOL_FALLBACK ? questionFallback(question) : reviewed;
