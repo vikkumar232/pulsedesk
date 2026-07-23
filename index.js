@@ -101,9 +101,10 @@ function groundedFallback(question, incident, safety, questions, context) {
 
 function estimateSeverity(incident, context = '') {
   const text = (JSON.stringify(incident) + ' ' + context).toLowerCase();
+  const noInjury = /no (one|person|people).*injur|no injuries|not injured/.test(text);
   if (/unconscious|not breathing|trapped|weapon|shot|child missing|drowning/.test(text)) return 9;
   if (/fire|smoke|gas|sparks|severe bleeding/.test(text)) return 8;
-  if (/breathing|heart|injured|collision|crash/.test(text)) return 7;
+  if (/breathing|heart|collision|crash/.test(text) || (!noInjury && /injured/.test(text))) return 7;
   if (/blocked|robbery|missing/.test(text)) return 6;
   return 4;
 }
