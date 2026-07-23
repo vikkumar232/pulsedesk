@@ -90,17 +90,17 @@ function questionFallback(question) {
   return PROTOCOL_FALLBACK;
 }
 
-function groundedFallback(question, incident, safety, questions) {
+function groundedFallback(question, incident, safety, questions, context) {
   const q = question.toLowerCase();
   if (/purpose|what is pulsedesk|how does pulsedesk|how does this work/.test(q)) return 'PulseDesk helps dispatchers organize call details, identify missing information, and review operator-controlled guidance.';
   if (/next|ask|question/.test(q)) return oneSentence(questions.questions?.[0] || safety.safeQuestions?.[0] || 'Ask for the exact location, caller callback number, people involved, and immediate safety risks.');
-  if (/risk|assess|severity/.test(q)) return `I assess this incident as ${estimateSeverity(incident)} / 10 priority; confirm injuries, hazards, location, and people involved before dispatching.`;
+  if (/risk|assess|severity/.test(q)) return `I assess this incident as ${estimateSeverity(incident, context)} / 10 priority; confirm injuries, hazards, location, and people involved before dispatching.`;
   if (/summary|report/.test(q)) return 'PulseDesk can organize the confirmed incident facts into a concise summary for operator review.';
   return questionFallback(question);
 }
 
-function estimateSeverity(incident) {
-  const text = JSON.stringify(incident).toLowerCase();
+function estimateSeverity(incident, context = '') {
+  const text = (JSON.stringify(incident) + ' ' + context).toLowerCase();
   if (/unconscious|not breathing|trapped|weapon|shot|child missing|drowning/.test(text)) return 9;
   if (/fire|smoke|gas|sparks|severe bleeding/.test(text)) return 8;
   if (/breathing|heart|injured|collision|crash/.test(text)) return 7;
@@ -121,7 +121,7 @@ async function orchestrate(question, context, apiKey, onEvent) {
   });
   const [incident, safety, questions] = await Promise.all(independent);
   if (protocol.status !== 'ok' || !protocol.approvedSteps.length) {
-    const answer = groundedFallback(question, incident, safety, questions);
+    const answer = groundedFallback(question, incident, safety, questions, context);
     onEvent('final', { agent: 'reviewer', status: 'ok', answer, protocolGrounded: false });
     return answer;
   }
